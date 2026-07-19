@@ -33,8 +33,8 @@ not_found_handling = "single-page-application"
 # in miniflare; `wrangler deploy` creates the namespace automatically.
 [[kv_namespaces]]
 binding = "PULSE_KV"
-id = "pulse_demo_kv"
-preview_id = "pulse_demo_kv_preview"
+id = "9c29f7ded7e24e39817a2d01002d9d91"
+preview_id = "14eda0f1cc224daa8c4da66f013aaff1"
 
 # Optional cron — when deployed, gives the agent a real server-side
 # heartbeat independent of a browser being open. Local `wrangler dev`

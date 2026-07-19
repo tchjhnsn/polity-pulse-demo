@@ -111,6 +111,8 @@ interface PulseResponse {
   narration: { enabled: boolean; note: string };
   feeds: FeedStatus[];
   items: PulseItem[];
+  /** The agent's durable memory — everything ever filed, newest-first, capped. */
+  log: PulseItem[];
 }
 
 // --- GDELT config -----------------------------------------------------------
@@ -282,7 +284,40 @@ class PulseStore {
   async setTick(value: number): Promise<void> {
     void this.kv.put("tick", String(value)).catch(() => undefined);
   }
+
+  /**
+   * The persistent filed-items log — what the agent has EVER filed, not
+   * just this tick's fetch. Directly addresses the "whatever pulse brings
+   * in needs to be persistent" request: without this, the feed reset to
+   * whatever GDELT/the civic table happened to return on the current tick,
+   * and anything that scrolled off (GDELT's 60-min window, a 15-row civic
+   * cap) was gone from the UI even though the agent had genuinely seen it.
+   * Capped at MAX_LOG_SIZE, newest-first. Read once per buildPulse() call;
+   * written only when there's something new to append (most ticks add
+   * nothing, so most ticks cost zero extra KV writes).
+   */
+  async getLog(): Promise<PulseItem[]> {
+    try {
+      const raw = await this.kv.get("filed_log");
+      return raw ? (JSON.parse(raw) as PulseItem[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async appendLog(newEntries: PulseItem[]): Promise<void> {
+    if (newEntries.length === 0) return;
+    try {
+      const existing = await this.getLog();
+      const merged = [...newEntries, ...existing].slice(0, MAX_LOG_SIZE);
+      await this.kv.put("filed_log", JSON.stringify(merged));
+    } catch {
+      /* best-effort — a failed log write never blocks the response */
+    }
+  }
 }
+
+const MAX_LOG_SIZE = 200;
 
 /** GDELT's seendate ("YYYYMMDDTHHMMSSZ") → ISO-8601. */
 function parseSeendate(seendate: string | undefined): string {
@@ -672,6 +707,13 @@ async function buildPulse(env: Env): Promise<PulseResponse> {
   // Tier 1 — narrate newest un-narrated items (no-op when unconfigured).
   await narrate(env, store, items);
 
+  // Persist what's new this tick into the agent's durable memory (the
+  // "whatever pulse brings in needs to be persistent" property) — append
+  // once, when first seen, so the log accretes rather than resetting to
+  // whatever the current GDELT/civic fetch happens to contain.
+  await store.appendLog(items.filter((it) => it.isNew));
+  const log = await store.getLog();
+
   return {
     banner:
       "Experimental preview — not part of the live Polity product. Built for the Red Hat Live Data hackathon track.",
@@ -700,6 +742,7 @@ async function buildPulse(env: Env): Promise<PulseResponse> {
       },
     ],
     items,
+    log,
   };
 }
 
@@ -714,6 +757,37 @@ export default {
 
   async fetch(request: Request, env: Env): Promise<Response> {
     const { pathname } = new URL(request.url);
+
+    // Lightweight heartbeat snapshot — reads already-cached module-scope
+    // state only, makes NO upstream calls (no GDELT, no DB, no Nemotron).
+    // Purpose-built for the header's persistent "live" indicator, which
+    // polls from every page: a full /api/pulse call would re-trigger the
+    // narration pass on each poll, which is the thing we most need to
+    // avoid hammering. This just answers "what does the agent currently
+    // know," not "go find out more."
+    if (pathname === "/api/status") {
+      return new Response(
+        JSON.stringify({
+          tick,
+          lastUpstreamFetchAt:
+            lastUpstreamFetchAt === null
+              ? null
+              : new Date(lastUpstreamFetchAt).toISOString(),
+          civicLastFetchAt:
+            civicLastFetchAt === null
+              ? null
+              : new Date(civicLastFetchAt).toISOString(),
+          gdeltOk: lastUpstreamOk,
+          civicOk,
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+          },
+        },
+      );
+    }
 
     if (pathname === "/api/pulse") {
       const pulse = await buildPulse(env);

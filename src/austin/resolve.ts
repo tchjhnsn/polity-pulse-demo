@@ -36,6 +36,13 @@ import {
   allFixtureOfficials,
   slugForOfficial,
   findFixtureBySlug,
+  FEDERAL_FIXTURES,
+  TX_STATE_SENATE_AUSTIN,
+  TX_STATE_HOUSE_AUSTIN,
+  TRAVIS_COUNTY_COMMISSIONERS_COURT,
+  TRAVIS_COUNTY_JUDICIAL,
+  AUSTIN_CITY_COUNCIL,
+  AUSTIN_MUNICIPAL,
   type Official,
 } from "./fixtures";
 import { categoriesForRole } from "./categories";
@@ -184,12 +191,11 @@ export async function orientAddress(
         `&fields=${GEOCODIO_FIELDS}&api_key=${encodeURIComponent(env.GEOCODIO_API_KEY)}`;
       const r = await fetch(url);
       if (!r.ok) {
-        return {
-          ...empty,
-          confidence: "error",
-          geocoderError: `Geocodio HTTP ${r.status}`,
-          coverageNote: `Geocoder error: HTTP ${r.status}`,
-        };
+        // Geocoder down or key invalid — fall back to the pinned Austin
+        // fixtures IF the address string looks Austin-y. This keeps the
+        // demo working when Geocodio revokes the key (which happened
+        // during the 2026-07-19 hackathon deploy). Honest in the note.
+        return fixtureFallback(env, address, empty, `Geocoder HTTP ${r.status}; using pinned Austin fixtures`);
       }
       geo = (await r.json()) as GeocodioResponse;
       void env.PULSE_KV.put(cacheKey, JSON.stringify(geo), {
@@ -197,12 +203,7 @@ export async function orientAddress(
       });
     }
   } catch (e) {
-    return {
-      ...empty,
-      confidence: "error",
-      geocoderError: (e as Error).message,
-      coverageNote: `Geocoder error: ${(e as Error).name}`,
-    };
+    return fixtureFallback(env, address, empty, `Geocoder error: ${(e as Error).name}; using pinned Austin fixtures`);
   }
 
   const results = geo.results ?? [];
@@ -418,6 +419,58 @@ function toOrientation(o: Official): OrientationOfficial {
     officeDescription: o.officeDescription,
     slug: slugForOfficial(o),
     categories: categoriesForRole(o.role),
+  };
+}
+
+/**
+ * Fallback when Geocodio is unavailable (key revoked, network down, etc.).
+ * Returns the pinned Austin fixture officials (the Texas Capitol demo user's
+ * 36-official set) when the address string looks Austin-y. Honest in the
+ * coverageNote — the citizen sees "using pinned Austin fixtures" so they
+ * know the orientation isn't address-specific.
+ *
+ * The heuristic: address contains "austin" OR a Travis County ZIP (78701-
+ * 78799 range, plus 786xx for some Travis suburbs). Good enough for the
+ * demo; not a real geocoder.
+ */
+function fixtureFallback(
+  _env: OrientEnv,
+  address: string,
+  empty: OrientationResult,
+  note: string,
+): OrientationResult {
+  const a = address.toLowerCase();
+  const looksAustin =
+    a.includes("austin") ||
+    /\b78(7[0-9][0-9]|6[0-9][0-9])\b/.test(a); // 787xx or 786xx ZIPs
+  if (!looksAustin) {
+    return {
+      ...empty,
+      confidence: "error",
+      coverageNote:
+        "Geocoder unavailable and the address doesn't look like the Austin metro. Demo coverage is Travis County only.",
+    };
+  }
+  // Return the pinned Austin set: federal (Cruz/Cornyn/Doggett) + state (Eckhardt/Flores) +
+  // county (commissioners court + judicial) + city (council + municipal).
+  const officials: OrientationOfficial[] = [
+    ...FEDERAL_FIXTURES,
+    ...Object.values(TX_STATE_SENATE_AUSTIN),
+    ...Object.values(TX_STATE_HOUSE_AUSTIN),
+    ...TRAVIS_COUNTY_COMMISSIONERS_COURT,
+    ...TRAVIS_COUNTY_JUDICIAL,
+    ...AUSTIN_CITY_COUNCIL,
+    ...AUSTIN_MUNICIPAL,
+  ].map(toOrientation);
+  return {
+    inputAddress: address,
+    formattedAddress: address, // best we can do without a geocoder
+    county: "Travis County",
+    state: "TX",
+    withinCoverage: true,
+    officials,
+    confidence: "low", // honest — we didn't actually geocode
+    coverageNote: `${note}. Address-specific districts (congressional, state-leg) are pinned to the Texas Capitol demo user — enter a real Austin address with a working geocoder for true per-address orientation.`,
   };
 }
 
