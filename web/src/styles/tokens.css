@@ -1,0 +1,42 @@
+/**
+ * Design tokens — Polity Pulse demo (HACKATHON-ONLY).
+ *
+ * Copied from apps/web/src/styles/tokens.css (the canonical Polity tokens,
+ * Vol. I with v2 corrections). This is a demo surface that will be deleted
+ * post-hackathon; copying rather than aliasing keeps the demo self-contained
+ * and avoids a cross-app build dependency. If the demo ever becomes a real
+ * product surface, import from the canonical location instead.
+ *
+ * See docs/operations/pulse-demo-ui-ux-plan-2026-07-19.md §4.
+ */
+
+:root {
+  /* ─── Paper & ink ───────────────────────────────────────────── */
+  --paper: #f6f2e8;
+  --paper-2: #efeadb;
+  --paper-3: #e7e0cd;
+
+  --ink: #1a1612;
+  --ink-2: #4a3f33;
+  --ink-3: #8a7f6f;
+
+  --rule: rgba(26, 22, 18, 0.45);
+  --rule-soft: rgba(26, 22, 18, 0.18);
+
+  /* ─── Civic inks (jurisdiction / role) ──────────────────────── */
+  --accent-blue: #1a3a5e; /* federal / informational — GDELT feed */
+  --accent-red: #7a3225; /* editorial / primary-source — Civic feed */
+  --accent-yellow: #e8c547; /* highlight — NEW tag */
+  --accent-green: #4a7a3f; /* affirmative — heartbeat OK */
+
+  /* ─── Highlights (low-saturation washes) ────────────────────── */
+  --hl-yellow: rgba(232, 197, 71, 0.35);
+  --hl-blue: rgba(26, 58, 94, 0.14);
+  --hl-red: rgba(122, 50, 37, 0.14);
+  --hl-green: rgba(74, 122, 63, 0.16);
+
+  /* ─── Type stack ────────────────────────────────────────────── */
+  --font-hand: "Caveat", cursive;
+  --font-clean: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+}

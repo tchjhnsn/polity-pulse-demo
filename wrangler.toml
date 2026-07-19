@@ -1,0 +1,64 @@
+# Cloudflare Worker — pulse-demo.
+#
+# HACKATHON-ONLY. Red Hat Live Data track, AITX x NVIDIA Claw Agent
+# Hackathon (July 17-19 2026). This Worker is NOT part of the shipped
+# Polity product and is never linked from apps/web. See
+# docs/operations/handoff-red-hat-live-data-hackathon-2026-07-18.md.
+#
+# Runs locally with `wrangler dev` (no secrets, no DB required for the
+# Tier-0 GDELT feed). The optional civic feed (Layer 1 Postgres) activates
+# only when DATABASE_URL is provided; without it the dashboard shows the
+# civic feed as "offline (no DB configured)" and still runs on GDELT alone.
+
+name = "polity-pulse-demo"
+main = "src/index.ts"
+compatibility_date = "2025-01-15"
+compatibility_flags = ["nodejs_compat"]
+
+# Static Assets — the Vite-built SPA in web/dist/ is served at /* by the
+# Workers runtime. The Worker's fetch handler keeps /api/pulse as a JSON
+# endpoint and delegates everything else to ASSETS. Build the SPA first
+# with `pnpm --filter @polity/pulse-demo-web build`. See
+# docs/operations/pulse-demo-ui-ux-plan-2026-07-19.md §1.
+[assets]
+directory = "./web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# Persistent memory for the pulse agent (HACKATHON-ONLY, per handoff §3.2).
+# Stores: heartbeat cursor (last seen item ids), narration cache (id →
+# one-liner), and — when the conversational query surface ships — Q&A
+# history. Kept physically out of the curated @polity/db Postgres schema;
+# this is demo state, not citizen data. Local `wrangler dev` emulates KV
+# in miniflare; `wrangler deploy` creates the namespace automatically.
+[[kv_namespaces]]
+binding = "PULSE_KV"
+id = "pulse_demo_kv"
+preview_id = "pulse_demo_kv_preview"
+
+# Optional cron — when deployed, gives the agent a real server-side
+# heartbeat independent of a browser being open. Local `wrangler dev`
+# drives the heartbeat from client polls instead. Every 5 minutes.
+[triggers]
+crons = ["*/5 * * * *"]
+
+[observability]
+enabled = true
+
+# Optional secrets (NONE required for the Tier-0 GDELT-only demo). For local
+# dev put these in apps/pulse-demo/.dev.vars (gitignored) instead of wrangler
+# secret put:
+#   DATABASE_URL       — Neon Postgres read-only; activates the civic feed
+#                        (Layer 1 bills/votes).
+#   NEMOTRON_BASE_URL  — Tier-1 AI narration (demo-only). OpenAI-compatible
+#   NEMOTRON_API_KEY     /chat/completions base URL, e.g.
+#   NEMOTRON_MODEL       https://integrate.api.nvidia.com/v1 . All three
+#                        required together; absent any, narration is skipped
+#                        and the feed is unaffected. Example model:
+#                        nvidia/llama-3.1-nemotron-70b-instruct
+#
+# .dev.vars example (one KEY="value" per line):
+#   DATABASE_URL="postgresql://…"
+#   NEMOTRON_BASE_URL="https://integrate.api.nvidia.com/v1"
+#   NEMOTRON_API_KEY="nvapi-…"
+#   NEMOTRON_MODEL="nvidia/llama-3.1-nemotron-70b-instruct"
